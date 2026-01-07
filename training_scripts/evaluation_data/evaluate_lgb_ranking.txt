@@ -1,0 +1,25 @@
+
+🏆 MODEL RANKING (by test global_pairwise_acc)
+--------------------------------------------------
+ 1. 50k-hit-random_anchors-999 | τ = 0.8376 | 
+ 2. 50k-hit-random_anchors-1665 | τ = 0.8345 | 
+ 3. 50k-hit-random_anchors-33 | τ = 0.8337 | 
+ 4. 50k-hit-random_anchors-333 | τ = 0.8330 | 
+ 5. 50k-hit-radial_anchors | τ = 0.8322 | 
+ 6. 50k-hit-random_anchors-66 | τ = 0.8316 | 
+ 7. 50k-hit-random_anchors-99 | τ = 0.8313 |
+ 8. 50k-hit-embedding-random_anchors | τ = 0.8300 |
+ 9. 50k-hit-nearest_neighbor | τ = 0.8286 |
+10. 50k-hit-random_anchors-1332 | τ = 0.8247 |
+11. 50k-hit-random_anchors-666 | τ = 0.8244 |
+12. 50k-hit-embedding-radial_anchors | τ = 0.8231 |
+13. 50k-hit-random | τ = 0.8201 |
+14. 50k-hit-embedding-nearest_neighbor | τ = 0.8179 |
+15. 50k-hit-embedding-random | τ = 0.8080 |
+16. llm-gpt-4-1-mini | τ = 0.7676 |
+17. llm-gpt-4-1 | τ = 0.7163 |
+18. 50k-all-min-random | τ = 0.6755 |
+19. 50k-all-min-random_anchors | τ = 0.6745 |
+20. 50k-all-min-nearest_neighbor | τ = 0.6740 |
+21. wordnet    | τ = 0.5812 |
+22. len        | τ = 0.5049 |
