@@ -27,7 +27,7 @@ def score_intro_vs_related(
         encoding_batch_size=64,
         batch_size=64,
         show_progress_bar=True,
-        percentile_output=True,
+        return_percentiles=True,
         percentile_before_pooling=True
     )
 
@@ -41,7 +41,7 @@ def score_intro_vs_related(
         encoding_batch_size=64,
         batch_size=64,
         show_progress_bar=True,
-        percentile_output=True,
+        return_percentiles=True,
         percentile_before_pooling=True
     )
 

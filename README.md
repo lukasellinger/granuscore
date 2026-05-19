@@ -1,25 +1,36 @@
+[![PyPI version](https://img.shields.io/pypi/v/granuscore.svg)](https://pypi.org/project/granuscore/)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black)](https://github.com/lukasellinger/granuscore)
 # Granuscore
 
-**Granuscore** is a Python library for measuring the *granularity* of natural language text.
+**Granuscore** is a Python library for measuring the *semantic granularity* of natural language text.
 
 It provides an end-to-end pipeline that:
+
 1. splits text into referential units,
-2. assigns a continuous granularity score to each unit, and
-3. aggregates these scores to obtain a document-level measure.
+2. assigns continuous granularity scores to each unit,
+3. aggregates these scores into document-level estimates.
+
+Granuscore is designed for analyzing how *fine-grained* or *coarse-grained* textual expressions are in applications such as question answering, educational dialogue, summarization, and scientific writing.
 
 ---
 
 ## Installation
 
-Clone the repository and install the package locally:
+Install from PyPI:
 
 ```bash
+pip install granuscore
+```
+
+Or install the latest development version locally:
+
+```bash
+git clone https://github.com/lukasellinger/granuscore.git
+cd granuscore
 pip install -e .
 ```
 
-### Optional Dependencies
-
-Additional dependencies for experiments and development can be installed via:
+Optional development dependencies:
 
 ```bash
 pip install -e ".[dev]"
@@ -27,48 +38,166 @@ pip install -e ".[dev]"
 
 ---
 
-## Example Usage
+## Quick Start
 
-A hands-on introduction to Granuscore is provided in  
-[`getting_started.ipynb`](./notebooks/getting_started.ipynb), which demonstrates the main pipeline and expected outputs.
+```python
+from granuscore import GranuScore
+
+scorer = GranuScore()
+
+text = """
+Tony Hawk was born in San Diego.
+"""
+
+score = scorer(text)
+
+print(score)
+```
+
+By default, Granuscore returns percentile scores, where higher values correspond to coarser-grained expressions.
+
+---
+
+## Default Configuration
+
+The default configuration reproduces the setup used in the paper.
+
+```python
+scorer = GranuScore()
+```
+
+Equivalent to:
+
+```python
+scorer = GranuScore(
+    predictor_type="hit",
+)
+```
+
+Default settings:
+
+- `predictor_type="hit"`
+- `model_name="Hierarchy-Transformers/HiT-MiniLM-L12-WordNetNoun"`
+- `search_method="random_anchors"`
+- `random_anchors_k=999`
+
+Required artifacts such as:
+- FAISS indices,
+- anchor vectors,
+- LightGBM models,
+- and reference percentile distributions
+
+are automatically downloaded and cached on first use.
+
+---
+
+## Important Compatibility Note
+
+The default configuration works out of the box and is the recommended setup.
+
+If you customize components such as:
+- the embedding model,
+- search method,
+- FAISS index,
+- anchor vectors,
+- or LightGBM model,
+
+you must ensure that all resources are compatible with each other.
+
+For example, a LightGBM model trained using:
+
+```python
+search_method="random_anchors"
+```
+
+should not be combined with:
+
+```python
+search_method="nearest_neighbor"
+```
+
+Similarly, FAISS indices, anchor vectors, percentile reference distributions, and LightGBM models must originate from the same embedding space and training configuration.
+
+Compatibility between custom resources is not validated automatically.
+
+---
+
+## Notebook Tutorial
+
+An interactive introduction is available in:
+
+```text
+notebooks/getting_started.ipynb
+```
 
 ---
 
 ## Repository Structure
 
-The repository structure below highlights the most important components of the project.
-
-```
+```text
 granuscore/
 ├── src/
-│   └── granuscore/                   # Core Python package
-│       ├── assets/                   # Reference distributions, anchors, and FAISS index
-│       ├── pipeline.py               # Main Granuscore pipeline
-│       └── granularity_predictor.py  # Granularity predictors (e.g., HiT, SentenceTransformer, LLM)
-├── training_scripts/                 # Training scripts for the LGB model and predictor evaluation on Granola-EQ
-├── evaluation/                       # Experiments and ablations (QA analysis, sentence specificity, paper sections)
+│   └── granuscore/
+│       ├── pipeline.py
+│       ├── granularity_predictor.py
+│       ├── claim_splitter.py
+│       ├── bucket_output.py
+│       ├── cache.py
+│       └── artifacts.py
 ├── notebooks/
-│   └── getting_started.ipynb         # Interactive introduction to Granuscore
-├── pyproject.toml                    # Package configuration
+│   └── getting_started.ipynb
+├── training_scripts/
+├── evaluation/
+├── assets/
+├── data/ (needs to be externally downloaded)
+├── pyproject.toml
+├── LICENSE
 └── README.md
 ```
 
+---
+
 ## Reproducing Paper Experiments
 
-To reproduce the experiments reported in the paper, the data must be placed in the expected location.
+The datasets and precomputed resources required to reproduce the experiments from the paper are available here:
 
-Unzip the provided archive in the repository root:
+https://drive.google.com/drive/folders/1mJdUENOxHEiuYn-_f1KRQ1PZggXJDnb4?usp=sharing
+
+Download the archive and extract it into the repository root:
 
 ```bash
 unzip data.zip
 ```
 
+This will create the expected directory structure used by the training and evaluation scripts.
+
+---
+
 ## Training Pipeline
 
-Training uses precomputed `.pkl` files for the train, validation, and test splits.
+Training uses precomputed `.pkl` feature files.
 
-To train a model:
+1. Generate precomputed datasets:
 
-1. Generate the precomputed datasets using one of the scripts in  
-   `training_scripts/build_precalc_data/`.
-2. Train the model by running `training_scripts/train_lgb_models.py`.
+```text
+training_scripts/build_precalc_data/
+```
+
+2. Train LightGBM models:
+
+```bash
+python training_scripts/train_lgb_models.py
+```
+
+---
+
+## Citation
+Updated Citation information will be added after publication.
+
+```bibtex
+@misc{ellinger2026granuscore,
+  title={Granuscore: A Reference-Free Measure of Granularity for Text Analysis and Question Answering},
+  author={Ellinger, Lukas and Fichtl, Alexander M. and Anschütz, Miriam and Groh, Georg},
+  year={2026}
+}
+```

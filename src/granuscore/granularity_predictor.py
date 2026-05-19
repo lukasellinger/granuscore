@@ -3,7 +3,7 @@ import platform
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import Literal, Any
+from typing import Literal, Any, get_args
 
 import lightgbm as lgb
 import faiss
@@ -16,7 +16,11 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from nltk.corpus import wordnet as wn
 
+from granuscore.artifcats import ArtifactManager
+from granuscore.bucket_output import PercentileOutput
 from granuscore.cache import GranuscoreCache
+from granuscore.default_assets import DEFAULT_LGB_MODEL, DEFAULT_ANCHORS, DEFAULT_FAISS_INDEX, DEFAULT_NOUN_SCORES, \
+    DEFAULT_ORIGINAL_VECTORS
 from granuscore.utils import get_best_device, iter_batches, map_with_progress
 
 _FAISS_THREADING_CONFIGURED = False
@@ -42,13 +46,16 @@ def configure_faiss_threading():
 
 
 SearchMethod = Literal["nearest_neighbor", "random", "random_anchors", "radial_anchors"]
-
+PredictorType = Literal["hit", "sentence_transformer", "llm"]
 
 class GranularityPredictor(ABC):
     """
     Pure interface defining the granularity predictor contract.
     No implementation details.
     """
+
+    NO_FACT_SCORE = 5.0
+    percentile_output: PercentileOutput = None
 
     @abstractmethod
     def score(
@@ -85,41 +92,132 @@ class BaseIndexGranularityPredictor(GranularityPredictor):
     Defines the public interface and shared cache behavior.
     Concrete subclasses must implement embedding and feature extraction.
     """
+    DEFAULT_MODEL_NAME: str | None = None
 
     def __init__(
         self,
-        model_name: str,
-        entity_index: str,
-        granu_predictor_name: str | None,
-        search_method: SearchMethod | None = None,
+        model_name: str | None = None,
+        faiss_index_path: str | None = None,
+        lgb_model_path: str | None = None,
+        anchor_path: str | None = None,
+        search_method: SearchMethod = "random_anchors",
         random_anchors_k: int = 999,
         use_cache: bool = True,
     ):
-        self.model_name = model_name
-        self.entity_index_path = entity_index
-        self.granu_predictor_name = granu_predictor_name
+        """
+        Initialize an index-based granularity predictor.
 
-        self.index = self._load_index(entity_index)
-        self.N = self.index.ntotal
+        The default configuration reproduces the setup used in the paper and
+        works out of the box without requiring any additional resources.
 
-        self.model = self._load_model(model_name)
-        self.granu_predictor = self._load_granu_predictor(granu_predictor_name)
+        Default configuration
+        ---------------------
+        - model_name:
+          ``"Hierarchy-Transformers/HiT-MiniLM-L12-WordNetNoun"``
+        - search_method:
+          ``"random_anchors"``
+        - random_anchors_k:
+          ``999``
+        - use_cache:
+          ``True``
+
+        Parameters
+        ----------
+        model_name:
+            Embedding model used to encode referential units.
+            If None, the predictor-specific default model is used.
+
+        faiss_index_path:
+            Optional path to a FAISS index containing searchable reference vectors.
+            Required for search methods relying on nearest-neighbor retrieval
+            (e.g. ``"nearest_neighbor"`` or ``"random"``).
+
+        lgb_model_path:
+            Optional path to the LightGBM granularity model used for final score
+            prediction.
+
+        anchor_path:
+            Optional path to precomputed anchor vectors used by anchor-based
+            search methods (e.g. ``"random_anchors"`` or ``"radial_anchors"``).
+
+        search_method:
+            Strategy used to retrieve or construct comparison vectors for feature
+            extraction.
+
+        random_anchors_k:
+            Number of anchor vectors used for ``"random_anchors"``.
+
+        use_cache:
+            Whether to cache computed granularity scores.
+
+        Notes
+        -----
+        The provided resources must be compatible with each other.
+
+        In particular, ``lgb_model_path``, ``search_method``,
+        ``faiss_index_path``, ``anchor_path``, and related resources are expected
+        to originate from the same training/configuration setup.
+
+        For example, using the default LightGBM model trained for
+        ``search_method="random_anchors"`` together with
+        ``search_method="nearest_neighbor"`` may produce invalid results or
+        undefined behavior.
+
+        Similarly, anchor vectors, FAISS indices, reference percentile scores,
+        and LightGBM models must correspond to the same embedding space and
+        feature configuration.
+
+        Compatibility between custom resources is not validated automatically
+        and must be ensured by the user.
+        """
+        if search_method not in get_args(SearchMethod):
+            raise ValueError(
+                f"Invalid search_method '{search_method}'. "
+                f"Expected one of: {get_args(SearchMethod):}"
+            )
+
+        model_name = model_name or self.DEFAULT_MODEL_NAME
+        if model_name is None:
+            raise ValueError("model_name must be provided.")
 
         self.search_method = search_method
+        self.random_anchors_k = random_anchors_k
+
+        manager = ArtifactManager()
+
+        # Defaults to settings in paper (random_anchors with k=999)
+        lgb_model_path = lgb_model_path or str(manager.ensure(DEFAULT_LGB_MODEL))
+        if search_method in {"random_anchors", "radial_anchors"}:
+            anchor_path = anchor_path or str(manager.ensure(DEFAULT_ANCHORS))
+        elif search_method in {"nearest_neighbor", "random"}:
+            faiss_index_path = faiss_index_path or str(manager.ensure(DEFAULT_FAISS_INDEX))
+
+        self.index = None
+        self.N = 0
+        if faiss_index_path is not None:
+            self.index = self._load_index(faiss_index_path)
+            self.N = self.index.ntotal
+
         self.anchors = None
-        self.rng = None
-        if search_method == 'random_anchors':
-            self.anchors = np.load(entity_index.replace(".faiss", ".npy").replace("index", f"random_anchors_{random_anchors_k}"))
-        elif search_method == 'random':
-            self.rng = np.random.default_rng(42)  # create a reproducible generator
+        if anchor_path is not None:
+            self.anchors = np.load(anchor_path)
+
+        self.rng = np.random.default_rng(42) if search_method == "random" else None
+
+        self.model = self._load_model(model_name)
+        self.granu_predictor = self._load_granu_predictor(lgb_model_path)
+
+        if search_method == "random_anchors" and random_anchors_k == 999:
+            reference_scores_path = str(manager.ensure(DEFAULT_NOUN_SCORES))
+            self.percentile_output = PercentileOutput(reference_scores_path)
 
         self.cache = None
         if use_cache:
             self.cache = GranuscoreCache(
                 scorer=self,
                 hierarchy_model=model_name,
-                faiss_index=entity_index,
-                lgb_model=granu_predictor_name,
+                faiss_index=str(faiss_index_path),
+                lgb_model=str(lgb_model_path),
             )
 
     @abstractmethod
@@ -139,9 +237,9 @@ class BaseIndexGranularityPredictor(GranularityPredictor):
     ) -> np.ndarray:
         pass
 
-    def _load_index(self, entity_index: str):
+    def _load_index(self, faiss_index: str):
         configure_faiss_threading()
-        return faiss.read_index(entity_index)
+        return faiss.read_index(faiss_index)
 
     def _load_granu_predictor(self, granu_predictor_name: str | None):
         if granu_predictor_name:
@@ -302,14 +400,42 @@ class BaseIndexGranularityPredictor(GranularityPredictor):
 
 
 class HitGranularityPredictor(BaseIndexGranularityPredictor):
+    DEFAULT_MODEL_NAME = "Hierarchy-Transformers/HiT-MiniLM-L12-WordNetNoun"
 
-    def __init__(self, model_name: str, entity_index: str, granu_predictor_name: str | None, search_method: SearchMethod = 'radial_anchors', random_anchors_k: int = 999, use_cache: bool = True):
-        super().__init__(model_name, entity_index, granu_predictor_name, search_method, random_anchors_k, use_cache)
+    def __init__(
+        self,
+        model_name: str | None = None,
+        search_method: SearchMethod = "random_anchors",
+        random_anchors_k: int = 999,
+        use_cache: bool = True,
+        faiss_index_path: str | None = None,
+        lgb_model_path: str | None = None,
+        anchor_path: str | None = None,
+        original_vectors_path: str | None = None,
+    ):
+        super().__init__(
+            model_name=model_name,
+            faiss_index_path=faiss_index_path,
+            lgb_model_path=lgb_model_path,
+            anchor_path=anchor_path,
+            search_method=search_method,
+            random_anchors_k=random_anchors_k,
+            use_cache=use_cache,
+        )
 
-        if search_method == 'radial_anchors':
-            self.anchors = np.load(entity_index.replace(".faiss", ".npy").replace("index", "radial_anchors"))
-        elif search_method in {'random', 'nearest_neighbor'}:
-            self.original_vectors = np.load(entity_index.replace(".faiss", ".npy").replace("index", "original-vectors"))
+        self.original_vectors = None
+
+        if search_method in {"nearest_neighbor", "random"}:
+            manager = ArtifactManager()
+
+            if original_vectors_path is None:
+                original_vectors_path = str(
+                    manager.ensure(DEFAULT_ORIGINAL_VECTORS)
+                )
+
+            self.original_vectors = np.load(
+                original_vectors_path
+            )
 
     def _load_model(self, model_name: str):
         return HierarchyTransformer.from_pretrained(model_name).to(
@@ -354,8 +480,8 @@ class HitGranularityPredictor(BaseIndexGranularityPredictor):
         """
         device = get_best_device()
 
-        ans_vec_t = torch.tensor(ans_vec).to(device)
-        neighbors_t = torch.tensor(neighbors).to(device)
+        ans_vec_t = torch.from_numpy(ans_vec).to(device)
+        neighbors_t = torch.from_numpy(neighbors).to(device)
 
         # distance to origin
         ans_vec_dist0 = self.model.manifold.dist0(ans_vec_t)  # [b]
@@ -396,8 +522,8 @@ class HitWithoutDis0Predictor(HitGranularityPredictor):
         """
         device = get_best_device()
 
-        ans_vec_t = torch.tensor(ans_vec).to(device)
-        neighbors_t = torch.tensor(neighbors).to(device)
+        ans_vec_t = torch.from_numpy(ans_vec).to(device)
+        neighbors_t = torch.from_numpy(neighbors).to(device)
 
         # distances to neighbors
         dists = self.model.manifold.dist(
@@ -417,6 +543,8 @@ class HitWithoutDis0Predictor(HitGranularityPredictor):
 
 
 class SentenceTransformerGranularityPredictor(BaseIndexGranularityPredictor):
+    DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
     def _embed_answers(self, answers: Sequence[str]):
         if hasattr(answers, "tolist"):  # pandas Series
             answers = answers.tolist()

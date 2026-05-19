@@ -1,0 +1,5 @@
+prune assets
+prune evaluation
+prune training_scripts
+prune notebooks
+prune data

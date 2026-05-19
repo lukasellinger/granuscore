@@ -4,31 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "granuscore"
-version = "0.2.0"
+version = "1.0.0"
 description = "Granularity scoring for natural language"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
+
 authors = [
-  { name = "Authors of Granuscore paper" }
+  {name = "Lukas Ellinger", email = "lukas.ellinger@tum.de"},
 ]
-license = { file = "LICENSE" }
+
+license = "MIT"
+
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "License :: OSI Approved :: MIT License",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Text Processing :: Linguistic",
 ]
+
 keywords = [
   "granularity",
   "natural language processing",
   "nlp",
   "text analysis",
   "semantic abstraction",
+  "specificity"
 ]
 
 dependencies = [
@@ -44,14 +48,12 @@ dependencies = [
   "openai>=2.21.0"
 ]
 
+[project.urls]
+Repository = "https://github.com/lukasellinger/granuscore"
+Issues = "https://github.com/lukasellinger/granuscore/issues"
+
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.package-data]
-granuscore = ["assets/**/*"]
 
 [project.optional-dependencies]
 dev = [

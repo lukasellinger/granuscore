@@ -18,7 +18,7 @@ def score_dataset(
     scope_tail_q: float = 0.1
 ) -> Tuple[np.ndarray, np.ndarray]:
     sentences = [b['sentence'] for b in dataset]
-    scores = model.predict(sentences, pooling=pooling, pooling_scope=pooling_scope, scope_pooling_method=scope_pooling_method, encoding_batch_size=128, batch_size=128, show_progress_bar=True, percentile_output=True, percentile_before_pooling=True, tail_q=tail_q, scope_tail_q=scope_tail_q)
+    scores = model.predict(sentences, pooling=pooling, pooling_scope=pooling_scope, scope_pooling_method=scope_pooling_method, encoding_batch_size=128, batch_size=128, show_progress_bar=True, return_percentiles=True, percentile_before_pooling=True, tail_q=tail_q, scope_tail_q=scope_tail_q)
 
     if invert_rating:
         ratings = [-b["rating"] for b in dataset]

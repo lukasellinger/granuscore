@@ -49,7 +49,7 @@ class ArtifactManager:
             dst.unlink(missing_ok=True)
 
         # 2) bundled asset
-        bundled = files("granuscore") / "assets" / spec.subdir / spec.name
+        bundled = files("granuscore") / "../../assets" / spec.subdir / spec.name
         if bundled.is_file() and not force:
             self._copy_to_cache(bundled, dst)
             self._verify_hash_if_needed(dst, spec)

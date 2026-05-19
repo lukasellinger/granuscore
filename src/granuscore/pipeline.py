@@ -5,39 +5,26 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from granuscore import HitGranularityPredictor
-from granuscore.bucket_output import PercentileOutput
 from granuscore.claim_splitter import UnitSplitter, SpacyNounPhraseSplitter
-from granuscore.artifcats import ArtifactSpec, ArtifactManager
-from granuscore.granularity_predictor import SearchMethod
+from granuscore.granularity_predictor import (
+    HitGranularityPredictor,
+    SentenceTransformerGranularityPredictor,
+    LLMGranularityPredictor,
+    WordNetGranularityPredictor,
+    LengthGranularityPredictor,
+    PredictorType
+)
 from granuscore.utils import iter_batches
-
-DEFAULT_FAISS_INDEX = ArtifactSpec(
-    name="50k-hit-index.faiss",
-    subdir='faiss',
-    sha256="02bcb37669bf68f7859ea16e6aa7c85e81eacf2632a944eb94113d5c751d28b6",
-)
-
-DEFAULT_ANCHORS = ArtifactSpec(
-    name="50k-hit-random_anchors_999.npy",
-    subdir='faiss',
-    sha256="92432aabbec27507a71d56595bdd0e8c6ca5aeedafd13ed70af68b01de7e9436",
-)
-
-DEFAULT_LGB_MODEL = ArtifactSpec(
-    name="50k-hit-random_anchors-999_model.txt",
-    subdir='lgb_models',
-    sha256="5aba55b9e13c09d86561b50773d77e5c21c0a7f7c7092473537e28c247d451b9",
-)
-
-DEFAULT_NOUN_SCORES = ArtifactSpec(
-    name="scores-wordnet_nouns.npy",
-    subdir='references',
-    sha256="487a2c46afd74af3875058fb2115a5a1dc68d48a7ebde2e7aabeb3b4e2551a53",
-)
 
 Pooling = Literal["sum", "mean", "lower_quantile_mean", "min", "max", "weighted_mean"]
 PoolingScope = Literal["document", "sentence"]
+PREDICTOR_REGISTRY = {
+    "hit": HitGranularityPredictor,
+    "sentence_transformer": SentenceTransformerGranularityPredictor,
+    "llm": LLMGranularityPredictor,
+    "wordnet": WordNetGranularityPredictor,
+    "length": LengthGranularityPredictor,
+}
 
 
 @dataclass(frozen=True)
@@ -67,21 +54,12 @@ class GranuScore:
     continuous granularity score to each unit, and aggregates these
     scores into a single text-level score.
     """
-    NO_FACT_SCORE = 5 # higher than rest -> gets set to 100 percentile
 
     def __init__(
             self,
-            hierarchy_model: str = "Hierarchy-Transformers/HiT-MiniLM-L12-WordNetNoun",
-            faiss_index_path: str | None = None,
-            lgb_model_path: str | None = None,
-            search_method: SearchMethod = 'random_anchors',
-            reference_scores_path: str | None = None,
-            anchor_path: str | None = None,
+            predictor_type: PredictorType = "hit",
             claim_splitter: UnitSplitter | None = None,
-            default_faiss_index: ArtifactSpec = DEFAULT_FAISS_INDEX,
-            default_lgb_model: ArtifactSpec = DEFAULT_LGB_MODEL,
-            default_reference_scores: ArtifactSpec = DEFAULT_NOUN_SCORES,
-            default_anchors: ArtifactSpec = DEFAULT_ANCHORS,
+            **predictor_kwargs,
     ):
         """
         Initialize the Granuscore pipeline.
@@ -89,41 +67,34 @@ class GranuScore:
         All parameters are optional and only need to be provided if you want
         to customize parts of the pipeline. By default, Granuscore uses the settings from the paper.
 
+        Default configuration
+        ---------------------
+        - predictor_type: ``"hit"``
+        - model_name: ``"Hierarchy-Transformers/HiT-MiniLM-L12-WordNetNoun"``
+        - search_method: ``"random_anchors"``
+        - random_anchors_k: ``999``
+        - use_cache: ``True``
+
         Parameters
         ----------
-        hierarchy_model:
-            Optional name or path of the hierarchical sentence embedding model.
-            Defaults to a general-purpose WordNet-based model.
-        faiss_index_path:
-            Optional path to a custom FAISS index. If not provided, a default
-            index is automatically downloaded and cached.
-        lgb_model_path:
-            Optional path to a custom LightGBM model. If not provided, a default
-            model is automatically downloaded and cached.
-        search_method:
-            Method used to gather input data into lgb model. Must match the lgb_model.
-            For default lgb model: 'radial_anchors'.
+        predictor_type:
+            Optional predictor_type.
+        model_name:
+            Optional model_name.
         claim_splitter:
             Optional component used to split text into referential units.
             Defaults to a spaCy-based noun phrase splitter.
-        default_faiss_index:
-            Artifact specification for the default FAISS index. This only needs
-            to be overridden for advanced use cases.
-        default_lgb_model:
-            Artifact specification for the default LightGBM model. This only needs
-            to be overridden for advanced use cases.
+        **predictor_kwargs:
+            Additional optional parameters passed to predictor.
         """
-        manager = ArtifactManager()
-        faiss_index_path = faiss_index_path or str(manager.ensure(default_faiss_index))
-        lgb_model_path = lgb_model_path or str(manager.ensure(default_lgb_model))
-        reference_scores_path = reference_scores_path or str(manager.ensure(default_reference_scores))
-        anchor_path = anchor_path or str(manager.ensure(default_anchors))
-
-        self.granu_predictor = HitGranularityPredictor(
-            hierarchy_model, faiss_index_path, lgb_model_path, search_method
-        )
         self.claim_splitter = claim_splitter or SpacyNounPhraseSplitter()
-        self.percentile_output = PercentileOutput(reference_scores_path)
+
+        if predictor_type not in PREDICTOR_REGISTRY:
+            raise ValueError(f"Unknown predictor_type '{predictor_type}'.")
+        else:
+            predictor_cls = PREDICTOR_REGISTRY[predictor_type]
+        self.granu_predictor = predictor_cls(**predictor_kwargs)
+        self.percentile_output = self.granu_predictor.percentile_output
 
     def __call__(
             self,
@@ -132,9 +103,9 @@ class GranuScore:
             pooling: Pooling = "mean",
             pooling_scope: PoolingScope = "sentence",
             scope_pooling_method: Pooling = "lower_quantile_mean",
-            detailed_infos: bool = False,
-            bucket_output: bool = False,
-            percentile_output: bool = True,
+            return_details: bool = False,
+            return_buckets: bool = False,
+            return_percentiles: bool = True,
             percentile_before_pooling: bool = True,
             batched: bool = True,
             batch_size: int = 128,
@@ -174,11 +145,11 @@ class GranuScore:
             ``pooling_scope="sentence"``, this parameter controls how
             sentence-level scores are aggregated into a single text-level score.
             Defaults to ``"lower_quantile_mean"``.
-        detailed_infos:
+        return_details:
             Whether to return detailed per-claim scores.
-        bucket_output:
+        return_buckets:
             Whether to output the score as text interpretation. Default False.
-        percentile_output:
+        return_percentiles:
             Whether to output the score as in percentiles. Default True.
         percentile_before_pooling:
             Whether you want to work with percentiles before pooling operations. Default True.
@@ -215,9 +186,9 @@ class GranuScore:
             pooling=pooling,
             pooling_scope=pooling_scope,
             scope_pooling_method=scope_pooling_method,
-            detailed_infos=detailed_infos,
-            bucket_output=bucket_output,
-            percentile_output=percentile_output,
+            return_details=return_details,
+            return_buckets=return_buckets,
+            return_percentiles=return_percentiles,
             percentile_before_pooling=percentile_before_pooling,
             batched=batched,
             batch_size=batch_size,
@@ -231,8 +202,8 @@ class GranuScore:
 
     @staticmethod
     def _validate_pooling(pooling: Pooling) -> None:
-        if pooling not in {"sum", "mean", "lower_quantile_mean", "min", "max"}:
-            raise ValueError('pooling must be either "sum", "mean", "lower_quantile_mean" or "min", "max"')
+        if pooling not in {"sum", "mean", "lower_quantile_mean", "min", "max", "weighted_mean"}:
+            raise ValueError('pooling must be either "sum", "mean", "weighted_mean", "lower_quantile_mean", "min", or "max"')
 
     @staticmethod
     def _validate_batching(batched: bool, batch_size: int) -> None:
@@ -263,9 +234,9 @@ class GranuScore:
             return float(np.mean(lower_tail))
         if pooling == "weighted_mean":
             assert weights is not None
-            return float(np.average(scores_list, weights=weights)) if scores_list else float(self.NO_FACT_SCORE)
+            return float(np.average(scores_list, weights=weights)) if scores_list else float(self.granu_predictor.NO_FACT_SCORE)
 
-        return float(np.mean(scores_list)) if scores_list else float(self.NO_FACT_SCORE)
+        return float(np.mean(scores_list)) if scores_list else float(self.granu_predictor.NO_FACT_SCORE)
 
     @staticmethod
     def _conversion_functions(convert_to_tensor: bool, convert_to_numpy: bool) -> tuple[Callable, Any]:
@@ -300,7 +271,7 @@ class GranuScore:
             scope_pooling_method: Pooling,
             tail_q: float,
             scope_tail_q: float,
-            detailed_infos: bool,
+            return_details: bool,
             to_scalar: Callable,
             percentile_before_pooling: bool = True,
             encoding_batch_size: int | None = None,
@@ -325,7 +296,7 @@ class GranuScore:
             Lower-tail fraction used by ``pooling="lower_quantile_mean"``. Must be in (0, 1]. Defaults to 0.1.
         scope_tail_q:
             Lower-tail fraction used by ``scope_pooling_method="lower_quantile_mean"``. Must be in (0, 1]. Defaults to 0.1.
-        detailed_infos:
+        return_details:
             Whether to build detailed output dicts.
         to_scalar:
             Conversion function for scalar scores.
@@ -369,7 +340,7 @@ class GranuScore:
         for text_idx, scopes in enumerate(scores_per_text):
             for scope_idx, scores in enumerate(scopes):
                 if not scores:
-                    no_fact_score = float(self.NO_FACT_SCORE)
+                    no_fact_score = float(self.granu_predictor.NO_FACT_SCORE)
                     if percentile_before_pooling:
                         no_fact_score = self.percentile_output.score_to_percentile(no_fact_score)
                     scores_per_text[text_idx][scope_idx] = [no_fact_score]
@@ -386,7 +357,7 @@ class GranuScore:
             pooled = to_scalar(self._pool(scope_pooled_scores, scope_pooling_method, scope_tail_q, weights=weights))
             pooled_scores.append(pooled)
 
-            if detailed_infos:
+            if return_details:
                 scopes_detail = []
                 for scope_idx, (scope, scope_scores, scope_pooled) in enumerate(
                         zip(facts_scopes, score_scopes, scope_pooled_scores)
@@ -419,7 +390,10 @@ class GranuScore:
         return pooled_scores, detailed
 
     def score_to_percentile(self, scores: float | list[float] | np.ndarray) -> float | list[float] | np.ndarray:
-        return self.percentile_output.score_to_percentile(scores)
+        if self.percentile_output:
+            return self.percentile_output.score_to_percentile(scores)
+        else:
+            raise AttributeError("Percentile Output not supported with current Predictor Type and setting.")
 
     def predict(
             self,
@@ -428,9 +402,9 @@ class GranuScore:
             pooling: Pooling = "mean",
             pooling_scope: PoolingScope = "sentence",
             scope_pooling_method: Pooling = "lower_quantile_mean",
-            detailed_infos: bool = False,
-            bucket_output: bool = False,
-            percentile_output: bool = True,
+            return_details: bool = False,
+            return_buckets: bool = False,
+            return_percentiles: bool = True,
             percentile_before_pooling: bool = True,
             batched: bool = True,
             batch_size: int = 128,
@@ -442,9 +416,7 @@ class GranuScore:
             encoding_batch_size: int | None = 128,
     ) -> str | float | list[float] | list[str] | np.ndarray | torch.Tensor | dict | list[dict]:
         """
-        Shorthand for :meth:`predict`.
-
-        Allows calling the instance directly as a function.
+        Predict granularity scores for one or more texts.
 
         Parameters
         ----------
@@ -470,11 +442,11 @@ class GranuScore:
             ``pooling_scope="sentence"``, this parameter controls how
             sentence-level scores are aggregated into a single text-level score.
             Defaults to ``"lower_quantile_mean"``.
-        detailed_infos:
+        return_details:
             Whether to return detailed per-claim scores.
-        bucket_output:
+        return_buckets:
             Whether to output the score as text interpretation. Default False.
-        percentile_output:
+        return_percentiles:
             Whether to output the score as in percentiles. Default True.
         percentile_before_pooling:
             Whether you want to work with percentiles before pooling operations. Default True.
@@ -510,12 +482,25 @@ class GranuScore:
         self._validate_encoding_batch_size(encoding_batch_size)
         if convert_to_tensor:
             convert_to_numpy = False
-        if bucket_output:
-            percentile_output = False
+        if return_buckets:
+            return_percentiles = False
         to_scalar, finalize_vector = self._conversion_functions(convert_to_tensor, convert_to_numpy)
-        percentile_before_pooling = percentile_before_pooling and percentile_output
+        percentile_before_pooling = percentile_before_pooling and return_percentiles
 
-        if isinstance(answers, str):
+        if self.percentile_output is None:
+            if (
+                    return_buckets
+                    or return_percentiles
+                    or percentile_before_pooling
+            ):
+                raise ValueError(
+                    "The selected predictor does not support percentile-based outputs. "
+                    "Disable return_buckets, return_percentiles, "
+                    "and percentile_before_pooling."
+                )
+
+        is_single_input = isinstance(answers, str)
+        if is_single_input:
             answers = [answers]
 
         if not batched:
@@ -535,7 +520,7 @@ class GranuScore:
         for batch in batch_iter:
             if not split:
                 scores = [float(s) for s in self.granu_predictor(batch, encoding_batch_size=encoding_batch_size)]
-                if detailed_infos:
+                if return_details:
                     for answer, score in zip(batch, scores):
                         detailed.append({
                             "answer": answer,
@@ -554,23 +539,24 @@ class GranuScore:
                     scope_pooling_method=scope_pooling_method,
                     tail_q=tail_q,
                     scope_tail_q=scope_tail_q,
-                    detailed_infos=detailed_infos,
+                    return_details=return_details,
                     to_scalar=to_scalar,
                     encoding_batch_size=encoding_batch_size
                 )
                 total_scores.extend(batch_scores)
-                if detailed_infos:
+                if return_details:
                     detailed.extend(batch_detailed)
 
-        if detailed_infos:
+        if return_details:
             output = detailed
-        elif bucket_output:
+        elif return_buckets:
             output = self.percentile_output.bucket(total_scores)
-        elif percentile_output:
+        elif return_percentiles:
             if split:
                 output = finalize_vector(total_scores if percentile_before_pooling else self.percentile_output.score_to_percentile(total_scores))
             else:
                 output = finalize_vector(self.percentile_output.score_to_percentile(total_scores))
         else:
             output = finalize_vector(total_scores)
-        return output if len(output) > 1 else output[0]
+
+        return output[0] if is_single_input else output
