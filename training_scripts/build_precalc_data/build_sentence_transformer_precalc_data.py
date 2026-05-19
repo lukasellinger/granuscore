@@ -100,11 +100,10 @@ def dump_pickle(obj, path: str):
 def main():
     scorer = SentenceTransformerGranularityPredictor(
         model_name=MODEL_NAME,
-        entity_index=INDEX_PATH,
-        granu_predictor_name=None,
+        faiss_index_path=INDEX_PATH,
+        lgb_model_path=None,
         search_method=search_method)
     dataset = load_dataset(f"{PROJECT_DIR}/data/granola-eq")
-
     train_lgb = build_lgb_entries(dataset["train"].to_list(), MAX_GRANOLA)
     val_lgb = build_lgb_entries(dataset["validation"].to_list(), MAX_GRANOLA)
     test_lgb = build_lgb_entries(dataset["test"].to_list(), MAX_GRANOLA)

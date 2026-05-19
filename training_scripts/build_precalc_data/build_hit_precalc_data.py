@@ -106,8 +106,8 @@ def dump_pickle(obj, path: str):
 def main():
     scorer = HitGranularityPredictor(
         model_name=MODEL_NAME,
-        entity_index=INDEX_PATH,
-        granu_predictor_name=None,
+        faiss_index_path=INDEX_PATH,
+        lgb_model_path=None,
         search_method=search_method,
         random_anchors_k=k)
 

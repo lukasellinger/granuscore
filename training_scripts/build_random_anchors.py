@@ -17,8 +17,8 @@ def all_min_random_anchors(K: int = 1000, seed: int = 42):
 
     scorer = SentenceTransformerGranularityPredictor(
         model_name=MODEL_NAME,
-        entity_index=INDEX_PATH,
-        granu_predictor_name=None,
+        faiss_index_path=INDEX_PATH,
+        lgb_model_path=None,
         search_method='random')
     ans_vec = scorer.model.encode(['test']).astype("float32")
     sims, indices, neighbors = scorer._search_random(ans_vec, K, return_neighbors=True)
