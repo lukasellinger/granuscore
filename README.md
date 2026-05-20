@@ -145,6 +145,7 @@ granuscore/
 │       ├── cache.py
 │       └── artifacts.py
 ├── notebooks/
+│   ├── build_granola_dataset.ipynb
 │   └── getting_started.ipynb
 ├── training_scripts/
 ├── evaluation/
@@ -170,6 +171,20 @@ unzip data.zip
 ```
 
 This will create the expected directory structure used by the training and evaluation scripts.
+
+---
+
+---
+
+## GRANOLA Dataset Construction
+
+We use a processed version of the [GRANOLA-EQ Dataset](https://huggingface.co/datasets/google/granola-entity-questions)  introduced by [Yona et al. (2024)](https://aclanthology.org/2024.acl-long.365/). Due to licensing restrictions of upstream resources, the processed dataset version used in this work is not redistributed directly in this repository or on external hosting platforms.
+
+Instead, the dataset can be reconstructed locally using the notebook:
+
+```text
+notebooks/build_granola_dataset.ipynb
+```
 
 ---
 
