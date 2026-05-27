@@ -178,7 +178,7 @@ This will create the expected directory structure used by the training and evalu
 
 ## GRANOLA Dataset Construction
 
-We use a processed version of the [GRANOLA-EQ Dataset](https://huggingface.co/datasets/google/granola-entity-questions)  introduced by [Yona et al. (2024)](https://aclanthology.org/2024.acl-long.365/). Due to licensing restrictions of upstream resources, the processed dataset version used in this work is not redistributed directly in this repository or on external hosting platforms.
+We use a processed version of the [GRANOLA-EQ Dataset](https://huggingface.co/datasets/google/granola-entity-questions) introduced by [Yona et al. (2024)](https://aclanthology.org/2024.acl-long.365/). Due to licensing restrictions of upstream resources, the processed dataset version used in this work is not redistributed directly in this repository or on external hosting platforms.
 
 Instead, the dataset can be reconstructed locally using the notebook:
 
@@ -207,12 +207,15 @@ python training_scripts/train_lgb_models.py
 ---
 
 ## Citation
-Updated Citation information will be added after publication.
 
 ```bibtex
-@misc{ellinger2026granuscore,
-  title={Granuscore: A Reference-Free Measure of Granularity for Text Analysis and Question Answering},
-  author={Ellinger, Lukas and Fichtl, Alexander M. and Anschütz, Miriam and Groh, Georg},
-  year={2026}
+@misc{ellinger2026granuscorereferencefreemeasuregranularity,
+      title={Granuscore: A Reference-Free Measure of Granularity for Text Analysis and Question Answering}, 
+      author={Lukas Ellinger and Alexander Fichtl and Miriam Anschütz and Georg Groh},
+      year={2026},
+      eprint={2605.26620},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2605.26620}, 
 }
 ```
