@@ -209,13 +209,23 @@ python training_scripts/train_lgb_models.py
 ## Citation
 
 ```bibtex
-@misc{ellinger2026granuscorereferencefreemeasuregranularity,
-      title={Granuscore: A Reference-Free Measure of Granularity for Text Analysis and Question Answering}, 
-      author={Lukas Ellinger and Alexander Fichtl and Miriam Anschütz and Georg Groh},
-      year={2026},
-      eprint={2605.26620},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2605.26620}, 
+@inproceedings{ellinger-2026-granuscore,
+    title = "Granuscore: A Reference-Free Measure of Granularity for Text Analysis and Question Answering",
+    author = {Ellinger, Lukas  and
+      Fichtl, Alexander M.  and
+      Ansch{\"u}tz, Miriam  and
+      Groh, Georg},
+    editor = "Lee, Hung-Yi  and
+      Dev, Sunipa  and
+      Li, Jessy  and
+      Elliott, Desmond",
+    booktitle = "Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing",
+    month = oct,
+    year = "2026",
+    address = "Budapest, Hungary",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2026.emnlp-main.16/",
+    pages = "373--390",
+    ISBN = "979-8-89176-459-0"
 }
 ```
